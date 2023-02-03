@@ -289,23 +289,29 @@ class Asymm_3d_spconv(nn.Module):
         self.logits = spconv.SubMConv3d(4 * init_size, nclasses, indice_key="logit", kernel_size=3, stride=1, padding=1,
                                         bias=True)
         
-        self.refinement = nn.Sequential(
-            nn.Linear(2 * init_size + point_dim, 256),
+        self.fea_alignment = nn.Linear(point_dim, 2 * init_size)
+
+        self.refinement1 = nn.Sequential(
+            nn.Linear(2 * init_size, 256),
             nn.BatchNorm1d(256),
-            nn.ReLU(),
-
-            nn.Linear(256, 128),
-            nn.BatchNorm1d(128),
-            nn.ReLU(),
-
-            nn.Linear(128, 64),
-            nn.BatchNorm1d(64),
-            nn.ReLU(),
-
-            nn.Linear(64, nclasses)
+            nn.ReLU()
         )
 
-    def forward(self, voxel_features, coors, unq_inv, processed_cat_pt_fea, batch_size):
+        self.refinement2 = nn.Sequential(
+            nn.Linear(256, 128),
+            nn.BatchNorm1d(128),
+            nn.ReLU()
+        )
+
+        self.refinement3 = nn.Sequential(
+            nn.Linear(128, 64),
+            nn.BatchNorm1d(64),
+            nn.ReLU()
+        )
+
+        self.classifier = nn.Linear(64, nclasses)
+
+    def forward(self, voxel_features, coors, unq_inv, processed_cat_pt_fea, mid_fea, batch_size):
         # x = x.contiguous()
         coors = coors.int()
 
@@ -327,8 +333,11 @@ class Asymm_3d_spconv(nn.Module):
         up0e = self.ReconNet(up1e)
 
         voxel2pt_fea = up0e.features[unq_inv]
-        pointwise_fea = torch.cat((voxel2pt_fea, processed_cat_pt_fea), 1)
-        pointwise_logits = self.refinement(pointwise_fea)
+        pointwise_fea = self.fea_alignment(processed_cat_pt_fea) + voxel2pt_fea
+        pointwise_logits = self.refinement1(pointwise_fea) + mid_fea[2]
+        pointwise_logits = self.refinement2(pointwise_logits) + mid_fea[1]
+        pointwise_logits = self.refinement3(pointwise_logits) + mid_fea[0]
+        pointwise_logits = self.classifier(pointwise_logits)
 
         up0e = up0e.replace_feature(torch.cat((up0e.features, up1e.features), 1))
 

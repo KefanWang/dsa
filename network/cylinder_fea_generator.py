@@ -16,23 +16,27 @@ class cylinder_fea(nn.Module):
                  out_pt_fea_dim=64, max_pt_per_encode=64, fea_compre=None):
         super(cylinder_fea, self).__init__()
 
-        self.PPmodel = nn.Sequential(
+        self.PPmodel1 = nn.Sequential(
             nn.BatchNorm1d(fea_dim),
 
             nn.Linear(fea_dim, 64),
             nn.BatchNorm1d(64),
             nn.ReLU(),
+        )
 
+        self.PPmodel2 = nn.Sequential(
             nn.Linear(64, 128),
             nn.BatchNorm1d(128),
-            nn.ReLU(),
+            nn.ReLU()
+        )
 
+        self.PPmodel3 = nn.Sequential(
             nn.Linear(128, 256),
             nn.BatchNorm1d(256),
-            nn.ReLU(),
-
-            nn.Linear(256, out_pt_fea_dim)
+            nn.ReLU()
         )
+                    
+        self.PPmodel = nn.Linear(256, out_pt_fea_dim)        
 
         self.max_pt = max_pt_per_encode
         self.fea_compre = fea_compre
@@ -74,7 +78,12 @@ class cylinder_fea(nn.Module):
         unq = unq.type(torch.int64)
 
         # process feature
-        processed_cat_pt_fea = self.PPmodel(cat_pt_fea)
+        processed_1 = self.PPmodel1(cat_pt_fea)
+        processed_2 = self.PPmodel2(processed_1)
+        processed_3 = self.PPmodel3(processed_2)
+        processed_cat_pt_fea = self.PPmodel(processed_3)
+
+        mid_fea = [processed_1, processed_2, processed_3]
         pooled_data = torch_scatter.scatter_max(processed_cat_pt_fea, unq_inv, dim=0)[0]
 
         if self.fea_compre:
@@ -82,5 +91,5 @@ class cylinder_fea(nn.Module):
         else:
             processed_pooled_data = pooled_data
 
-        return unq, processed_pooled_data, unq_inv, processed_cat_pt_fea, shuffled_ind
+        return unq, processed_pooled_data, unq_inv, processed_cat_pt_fea, mid_fea, shuffled_ind
 
