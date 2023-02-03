@@ -257,6 +257,7 @@ class ReconBlock(nn.Module):
 class Asymm_3d_spconv(nn.Module):
     def __init__(self,
                  output_shape,
+                 point_dim,
                  use_norm=True,
                  num_input_features=128,
                  nclasses=20, n_height=32, strict=False, init_size=16):
@@ -287,10 +288,27 @@ class Asymm_3d_spconv(nn.Module):
 
         self.logits = spconv.SubMConv3d(4 * init_size, nclasses, indice_key="logit", kernel_size=3, stride=1, padding=1,
                                         bias=True)
+        
+        self.refinement = nn.Sequential(
+            nn.Linear(2 * init_size + point_dim, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
 
-    def forward(self, voxel_features, coors, batch_size):
+            nn.Linear(256, 128),
+            nn.BatchNorm1d(128),
+            nn.ReLU(),
+
+            nn.Linear(128, 64),
+            nn.BatchNorm1d(64),
+            nn.ReLU(),
+
+            nn.Linear(64, nclasses)
+        )
+
+    def forward(self, voxel_features, coors, unq_inv, processed_cat_pt_fea, batch_size):
         # x = x.contiguous()
         coors = coors.int()
+
         # import pdb
         # pdb.set_trace()
         ret = spconv.SparseConvTensor(voxel_features, coors, self.sparse_shape,
@@ -308,8 +326,12 @@ class Asymm_3d_spconv(nn.Module):
 
         up0e = self.ReconNet(up1e)
 
+        voxel2pt_fea = up0e.features[unq_inv]
+        pointwise_fea = torch.cat((voxel2pt_fea, processed_cat_pt_fea), 1)
+        pointwise_logits = self.refinement(pointwise_fea)
+
         up0e = up0e.replace_feature(torch.cat((up0e.features, up1e.features), 1))
 
         logits = self.logits(up0e)
         y = logits.dense()
-        return y
+        return y, pointwise_logits

@@ -25,7 +25,7 @@ warnings.filterwarnings("ignore")
 
 
 def main(args):
-    pytorch_device = torch.device('cuda:0')
+    pytorch_device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     config_path = args.config_path
 
@@ -79,7 +79,7 @@ def main(args):
         pbar = tqdm(total=len(train_dataset_loader))
         time.sleep(10)
         # lr_scheduler.step(epoch)
-        for i_iter, (_, train_vox_label, train_grid, _, train_pt_fea) in enumerate(train_dataset_loader):
+        for i_iter, (_, train_vox_label, train_grid, pointwise_label, train_pt_fea) in enumerate(train_dataset_loader):
             if global_iter % check_iter == 0 and epoch >= 1:
                 my_model.eval()
                 hist_list = []
@@ -129,12 +129,20 @@ def main(args):
             point_label_tensor = train_vox_label.type(torch.LongTensor).to(pytorch_device)
             train_batch_size = train_vox_label.shape[0]
             # forward + backward + optimize
-            outputs = my_model(train_pt_fea_ten, train_vox_ten, train_batch_size)
-            loss = lovasz_softmax(torch.nn.functional.softmax(outputs), point_label_tensor, ignore=0) + loss_func(
-                outputs, point_label_tensor)
+
+            spatial_features, pointwise_features, shuffled_ind = my_model(train_pt_fea_ten, train_vox_ten, train_batch_size)
+
+            print('Forward pass done.')
+
+            pointwise_label_tensor = torch.cat([torch.tensor(batch_label).to(pytorch_device) for batch_label in pointwise_label], 0)
+            pointwise_label_tensor = pointwise_label_tensor[shuffled_ind].reshape(-1)
+
+            loss = lovasz_softmax(torch.nn.functional.softmax(spatial_features), point_label_tensor, ignore=0) + loss_func(
+                spatial_features, point_label_tensor) + loss_func(pointwise_features, pointwise_label_tensor)
             loss.backward()
             optimizer.step()
             loss_list.append(loss.item())
+            print('Backward pass done.')
 
             if global_iter % 1000 == 0:
                 if len(loss_list) > 0:

@@ -21,7 +21,8 @@ def build(model_config):
         use_norm=use_norm,
         num_input_features=num_input_features,
         init_size=init_size,
-        nclasses=num_class)
+        nclasses=num_class,
+        point_dim=out_fea_dim)
 
     cy_fea_net = cylinder_fea(grid_size=output_shape,
                               fea_dim=fea_dim,
